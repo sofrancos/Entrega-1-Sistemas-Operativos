@@ -15,6 +15,7 @@
 
 // Manejador para limpiar las FIFO si el servidor finaliza con CTRL+C
 void manejar_sigint(int sig) {
+    (void)sig; // Evita la advertencia de parámetro no usado
     unlink(FIFO_REQ);
     unlink(FIFO_RES);
     printf("\n[Servidor FIFO] Tuberías nombradas eliminadas y servidor cerrado correctamente.\n");
@@ -53,6 +54,8 @@ int main() {
     printf("[Servidor FIFO] Cliente conectado exitosamente. Listo para procesar consultas.\n");
 
     solicitud_t sol;
+    char resultados[MAX_RESULTADOS][TAM_REGISTRO];
+
     while (read(fd_req, &sol, sizeof(solicitud_t)) > 0) {
         if (sol.tipo == MSG_SALIR) {
             printf("[Servidor FIFO] Recibida orden de salida por parte del cliente.\n");
@@ -62,8 +65,32 @@ int main() {
         if (sol.tipo == MSG_CONSULTA) {
             printf("[Servidor FIFO] Consulta recibida -> Criterio: %d, Valor de búsqueda: '%s'\n", sol.criterio, sol.valor);
 
-            // Búsqueda secuencial en el CSV y envío directo de respuestas por la FIFO
-            csv_buscar_y_responder(sol.criterio, sol.valor, fd_res);
+            // Búsqueda secuencial en el CSV utilizando el módulo comun/csv.c
+            int encontrados = csv_buscar("data/dataset.csv", sol.criterio, sol.valor, resultados, MAX_RESULTADOS);
+
+            if (encontrados < 0) {
+                respuesta_t res;
+                res.tipo = RESP_ERROR;
+                snprintf(res.registro, sizeof(res.registro), "Error al leer el archivo CSV.");
+                write(fd_res, &res, sizeof(respuesta_t));
+            } else if (encontrados == 0) {
+                respuesta_t res;
+                res.tipo = RESP_SIN_RESULTADOS;
+                write(fd_res, &res, sizeof(respuesta_t));
+            } else {
+                // Enviar cada uno de los registros encontrados
+                for (int i = 0; i < encontrados; i++) {
+                    respuesta_t res;
+                    res.tipo = RESP_REGISTRO;
+                    strncpy(res.registro, resultados[i], TAM_REGISTRO - 1);
+                    res.registro[TAM_REGISTRO - 1] = '\0';
+                    write(fd_res, &res, sizeof(respuesta_t));
+                }
+                // Enviar mensaje de fin de transmisión
+                respuesta_t res;
+                res.tipo = RESP_FIN;
+                write(fd_res, &res, sizeof(respuesta_t));
+            }
         }
     }
 
