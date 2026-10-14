@@ -22,7 +22,7 @@ typedef struct {
 
 int main(int argc, char *argv[]) {
     // Por defecto asume que los datos están en data/pbdb_data.csv
-    const char *ruta_csv = "../data/pbdb_data.csv"; 
+    const char *ruta_csv = "data/dataset.csv"; 
     
     printf("[Servidor SHM] Iniciando servidor...\n");
 
