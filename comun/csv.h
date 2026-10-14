@@ -8,7 +8,7 @@
  * Lee el archivo sin cargarlo completo en memoria.
  *
  *   ruta        : ruta del archivo CSV
- *   criterio    : CRITERIO_NOMBRE, CRITERIO_FAMILIA, CRITERIO_PAIS o CRITERIO_EDAD, CRITERIO_FORMAGEO, CRITERIO_PHYLUM, CRITERIO_DIETA
+ *   criterio    : CRITERIO_NOMBRE, CRITERIO_FAMILIA, CRITERIO_PAIS o CRITERIO_EDAD, CRITERIO_FORMAGEO,	o CRITERIO_DIETA
  *   valor       : lo que escribio³ el usuario
  *   resultados  : arreglo donde se guardan los registros encontrados
  *   max         : cuantos resultados caben como maximo
