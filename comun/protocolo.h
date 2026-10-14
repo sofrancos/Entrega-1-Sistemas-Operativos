@@ -20,14 +20,13 @@
 #define CRITERIO_PAIS    3
 #define CRITERIO_EDAD    4
 #define CRITERIO_FORMAGEO   5
-#define CRITERIO_PHYLUM  6
-#define CRITERIO_DIETA   7
+#define CRITERIO_DIETA   6
 
 /* Tipos de respuesta */
 #define RESP_REGISTRO       1   /* trae un registro          */
-#define RESP_FIN            2   /* no hay más registros      */
-#define RESP_SIN_RESULTADOS 3   /* la búsqueda no encontró nada */
-#define RESP_ERROR          4   /* algo falló en el servidor */
+#define RESP_FIN            2   /* no hay mas registros      */
+#define RESP_SIN_RESULTADOS 3   /* la busqueda no encontro� nada */
+#define RESP_ERROR          4   /* algo fallo� en el servidor */
 
 /* Mensaje cliente -> servidor */
 typedef struct {
