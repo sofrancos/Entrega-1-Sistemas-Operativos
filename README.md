@@ -8,9 +8,7 @@
 - Sofía Franco Segura
 - Mariana García Dussan
 - Julián Foglia Wilches
-- Carlos Romero Sicacha
-
----
+- Carlos Stiven Romero Sicacha
 
 ## 📌 1. Descripción del proyecto
 
@@ -42,8 +40,6 @@ Después de clonar el repositorio, sigue estos pasos:
 Descarga el archivo desde la carpeta compartida de Google Drive:
 
 [📂 Descargar dataset desde Google Drive](https://drive.google.com/file/d/1Qco_Q3oWtcGwUMp9yxeFYVITsqA1Z9r5/view?usp=sharing)
-
-> Reemplaza `ENLACE_DEL_DRIVE` por el enlace real de la carpeta compartida.
 
 **2. Guardar el archivo en la ubicación correcta**
 
@@ -77,7 +73,7 @@ data/dataset.csv
 
 Esto confirma que Git está ignorando el CSV de acuerdo con la regla configurada.
 
-> **Importante:** cada integrante debe tener una copia local del dataset. Los programas leen el archivo directamente desde el disco, por lo que no necesitan conexión a Internet ni a GitHub durante la ejecución.
+> **Importante:** se  debe tener una copia local del dataset. Los programas leen el archivo directamente desde el disco, por lo que no necesitan conexión a Internet ni a GitHub durante la ejecución.
 
 ### 2.2. Columnas utilizadas
 
@@ -157,13 +153,11 @@ Los criterios de búsqueda están definidos en `comun/protocolo.h`. El índice c
 | 5 | `CRITERIO_FORMAGEO` | `formation` | Contiene el texto, sin distinguir mayúsculas y minúsculas. | `Hell Creek` |
 | 6 | `CRITERIO_DIETA` | `diet` | Contiene el texto, sin distinguir mayúsculas y minúsculas. | `herbivore` |
 
-Para el criterio de edad, el valor consultado \(X\) debe cumplir:
+Para el criterio de edad, el valor consultado \(X\) debe cumplir la siguiente condición:
 
-\[
-\texttt{min\_ma} \leq X \leq \texttt{max\_ma}
-\]
+**Condición:** `min_ma` ≤ `X` ≤ `max_ma`
 
-Los nombres y textos se buscan sin distinguir entre mayúsculas y minúsculas. El criterio de país, en cambio, requiere una coincidencia exacta con el código de dos letras.
+Los nombres y textos se buscan sin distinguir entre mayúsculas y minúsculas. En cambio, el criterio de país requiere una coincidencia exacta con el código de dos letras.
 
 ---
 
@@ -264,7 +258,3 @@ El mensaje de cierre será uno de los siguientes:
 - `RESP_ERROR`, si ocurrió un error.
 
 De esta manera, el cliente puede identificar cuándo termina cada consulta y distinguir entre una búsqueda sin coincidencias y una operación que produjo un error.
-
----
-
-**Fin del README.**
