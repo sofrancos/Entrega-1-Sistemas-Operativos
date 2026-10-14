@@ -41,7 +41,7 @@ Después de clonar el repositorio, sigue estos pasos:
 
 Descarga el archivo desde la carpeta compartida de Google Drive:
 
-[📂 Descargar dataset desde Google Drive](ENLACE_DEL_DRIVE)
+[📂 Descargar dataset desde Google Drive](https://drive.google.com/file/d/1Qco_Q3oWtcGwUMp9yxeFYVITsqA1Z9r5/view?usp=sharing)
 
 > Reemplaza `ENLACE_DEL_DRIVE` por el enlace real de la carpeta compartida.
 
