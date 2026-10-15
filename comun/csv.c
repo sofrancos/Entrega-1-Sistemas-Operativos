@@ -20,57 +20,56 @@
 #define TAM_CAMPO 256
 
 /*
- * Copia en 'dest' el campo numero 'idx' (empezando en 0) de 'linea'.
+ * Copia en 'dest' el campo número 'idx' (empezando en 0) de 'linea'.
  * Respeta las comillas: una coma dentro de "..." no separa campos.
- * Devuelve 0 si el campo existe, -1 si la linea tiene menos campos.
+ * Devuelve 0 si el campo existe, -1 si la línea tiene menos campos.
  */
 static int extraer_campo(const char *linea, int idx, char *dest, size_t tam)
 {
     int actual = 0;
     const char *p = linea;
 
-    while (*p && *p != '\n' && *p != '\r') {//se revisa que haya texto y que no sea un codon de terminacion o de retorno
+    /* Se recorre mientras haya texto y no se llegue al fin de línea ('\n' o '\r') */
+    while (*p && *p != '\n' && *p != '\r') {
         int entre_comillas = 0;
         size_t n = 0;
 
         if (*p == '"') { entre_comillas = 1; p++; }
 
-		while (*p && *p != '\n' && *p != '\r') {
-		    if (entre_comillas) {
-		        if (*p == '"') {
-		            if (p[1] == '"') {
-		                /* Dos comillas representan una comilla literal */
-		                if (actual == idx && n + 1 < tam)
-		                    dest[n++] = '"';
+        while (*p && *p != '\n' && *p != '\r') {
+            if (entre_comillas) {
+                if (*p == '"') {
+                    if (p[1] == '"') {
+                        /* Dos comillas representan una comilla literal */
+                        if (actual == idx && n + 1 < tam)
+                            dest[n++] = '"';
+                        p += 2;
+                        continue;
+                    }
+                    /* Comilla de cierre */
+                    entre_comillas = 0;
+                    p++;
+                    continue;
+                }
+            } else if (*p == ',') {
+                break;   /* Separador de campos */
+            }
 
-		                p += 2;
-		                continue;
-		            } else {
-		                /* Comilla de cierre */
-		                entre_comillas = 0;
-		                p++;
-		                continue;
-		            }
-		        }
-		    } else if (*p == ',') {
-		        break; /* Separador de campos */
-		    }
+            if (actual == idx && n + 1 < tam)
+                dest[n++] = *p;
+            p++;
+        }
 
-		    if (actual == idx && n + 1 < tam)
-		        dest[n++] = *p;
-
-		    p++;
-		}
         if (actual == idx) { dest[n] = '\0'; return 0; }
         if (*p == ',') p++; else break;
         actual++;
     }
 
-    if (actual == idx) { dest[0] = '\0'; return 0; }   /* campo vacio al final */
+    if (actual == idx) { dest[0] = '\0'; return 0; }   /* campo vacío al final */
     return -1;
 }
 
-/* ¿'texto' contiene a 'patron'? Sin distinguir mayusculas. */
+/* ¿'texto' contiene a 'patron'? Sin distinguir mayúsculas. */
 static int contiene(const char *texto, const char *patron)
 {
     size_t lp = strlen(patron);
@@ -86,15 +85,16 @@ static int contiene(const char *texto, const char *patron)
     return 0;
 }
 
-
-
-/* Posicion de cada columna que nos interesa (-1 si no se encontro) */
+/* Posición de cada columna que nos interesa (-1 si no se encontró) */
 typedef struct {
     int nombre, familia, pais, intervalo;
     int max_ma, min_ma, formacion, dieta;
 } columnas_t;
 
-/* Lee la primera linea del CSV y averigua en que� posicion esta� cada columna */
+/*
+ * Lee la primera línea del CSV y averigua en qué posición está cada columna.
+ * Un índice en -1 indica que esa columna no apareció en el encabezado.
+ */
 static int leer_encabezado(const char *linea, columnas_t *c)
 {
     char campo[TAM_CAMPO];
@@ -111,37 +111,39 @@ static int leer_encabezado(const char *linea, columnas_t *c)
         else if (strcmp(campo, COL_MIN_MA)    == 0) c->min_ma    = i;
         else if (strcmp(campo, COL_FORMACION) == 0) c->formacion = i;
         else if (strcmp(campo, COL_DIETA)     == 0) c->dieta     = i;
-    }//funcionan como indicadores de que no se han encontrado las columnas cuando tienen c=-1, se les asigna un indice cuando se encuentran
+    }
 
     if (c->nombre < 0 || c->familia < 0 || c->pais < 0 || c->intervalo < 0 ||
         c->max_ma < 0 || c->min_ma < 0 || c->formacion < 0 || c->dieta < 0) {
-        fprintf(stderr, "[csv] Al CSV le falta alguna columna necesaria\n");//error por si no se encuentra la columna
+        fprintf(stderr, "[csv] Al CSV le falta alguna columna necesaria\n");
         return -1;
     }
     return 0;
 }
 
-
-
-/* ¿Esta linea cumple el criterio de busqueda? */
+/*
+ * ¿Esta línea cumple el criterio de búsqueda?
+ * Usa los índices de 'c' para extraer la columna correspondiente al criterio.
+ * Devuelve 1 si coincide y 0 si no.
+ */
 static int coincide(const char *linea, const columnas_t *c, int criterio, const char *valor)
-//se compara la linea con el valor segun un criterio usando la estructura con los indices de las columnas
 {
-    char campo[TAM_CAMPO];//almacena temporalmente el valor de la columna que se evalua
-    int col;//indice de la columna que se evalua
+    char campo[TAM_CAMPO];   /* valor de la columna que se evalúa */
+    int col;                 /* índice de esa columna             */
 
-    switch (criterio) {//se escoge el indice c segun la busqueda del usuario
+    switch (criterio) {
     case CRITERIO_NOMBRE:   col = c->nombre;    break;
     case CRITERIO_FAMILIA:  col = c->familia;   break;
     case CRITERIO_PAIS:     col = c->pais;      break;
     case CRITERIO_FORMAGEO: col = c->formacion; break;
     case CRITERIO_DIETA:    col = c->dieta;     break;
-    case CRITERIO_EDAD: {//caso especial al trabajarse como numero dentro de un intervalo en vez de ser una columna propia
+    case CRITERIO_EDAD: {
+        /* Caso especial: la edad no es una columna, sino el rango [min_ma, max_ma] */
         char smax[64], smin[64];
         if (extraer_campo(linea, c->max_ma, smax, sizeof smax) != 0 ||
             extraer_campo(linea, c->min_ma, smin, sizeof smin) != 0 ||
             smax[0] == '\0' || smin[0] == '\0')
-            return 0;//se convierten los valores de extraer campo a double y se evalua el rango para determinar la edad
+            return 0;
         double edad = strtod(valor, NULL);
         return strtod(smin, NULL) <= edad && edad <= strtod(smax, NULL);
     }
@@ -150,16 +152,19 @@ static int coincide(const char *linea, const columnas_t *c, int criterio, const 
     }
 
     if (extraer_campo(linea, col, campo, sizeof campo) != 0)
-        return 0;//verifica si se logro
+        return 0;
 
     if (criterio == CRITERIO_PAIS)
-        return strcasecmp(campo, valor) == 0;   /* pais: igualdad exacta */
+        return strcasecmp(campo, valor) == 0;   /* país: igualdad exacta */
     return contiene(campo, valor);              /* resto: contiene el texto */
-}//coincide retorna 1 si se encontro y 0 si nada cumplio con el criterio
+}
 
-/* Arma el texto que vera� el usuario para un registro */
+/*
+ * Arma en 'dest' (de tamaño 'tam') el texto que verá el usuario para un
+ * registro. Los campos vacíos se reemplazan por un texto descriptivo.
+ */
 static void formatear(const char *linea, const columnas_t *c, char *dest, size_t tam)
-{//se escribe una cadena de tamano tam del csv en formato legible para el usuario en dest
+{
     char nombre[TAM_CAMPO], familia[TAM_CAMPO], intervalo[TAM_CAMPO];
     char formacion[TAM_CAMPO], dieta[TAM_CAMPO];
     char pais[16], smax[32], smin[32];
@@ -172,7 +177,7 @@ static void formatear(const char *linea, const columnas_t *c, char *dest, size_t
     extraer_campo(linea, c->min_ma,    smin,      sizeof smin);
     extraer_campo(linea, c->formacion, formacion, sizeof formacion);
     extraer_campo(linea, c->dieta,     dieta,     sizeof dieta);
-//se recuperan los campos de cada columna con los indices calculados y se  envian a los arreglos
+
     snprintf(dest, tam, "%s | %s | %s (%s-%s Ma) | %s | %s | %s",
              nombre,
              familia[0]   ? familia   : "familia desconocida",
@@ -180,37 +185,44 @@ static void formatear(const char *linea, const columnas_t *c, char *dest, size_t
              pais[0]      ? pais      : "??",
              formacion[0] ? formacion : "formación desconocida",
              dieta[0]     ? dieta     : "dieta desconocida");
-}//se actualiza el arreglo de arreglos incluyendo el caso de valores nulos tambien
-
-
-
+}
 
 int csv_buscar(const char *ruta, int criterio, const char *valor,
-               char resultados[][TAM_REGISTRO], int max)
-{//funcion principal del codigo, recibe la ruta al csv, el criterio, el valor y retorna lo encontrado en matrix resultados de tamano max
+               char resultados[][TAM_REGISTRO], int max, int *total)
+{
     FILE *f = fopen(ruta, "r");
     if (f == NULL) {
         fprintf(stderr, "[csv] No se pudo abrir %s: %s\n", ruta, strerror(errno));
         return -1;
-    }//error al abrir el archivo
+    }
 
-    char *linea = NULL;   /* getline reserva y reutiliza esta memoria, puntero apunta al espacio de memoria de cada linea leida de capacidad cap */
+    /* getline reserva y reutiliza este búfer; se libera una sola vez al final */
+    char *linea = NULL;
     size_t cap = 0;
     columnas_t c;
-    int n = 0;//numero de registros encontrados
+    int n = 0;              /* registros guardados en 'resultados' */
+    int coincidencias = 0;  /* coincidencias en todo el archivo    */
 
     if (getline(&linea, &cap, f) == -1 || leer_encabezado(linea, &c) == -1) {
-        fprintf(stderr, "[csv] El archivo esta� vacio o el encabezado no es valido\n");
+        fprintf(stderr, "[csv] El archivo está vacío o el encabezado no es válido\n");
         free(linea);
         fclose(f);
         return -1;
-    }//se obtienen las columnas principales del archivo
-    while (n < max && getline(&linea, &cap, f) != -1) {
+    }
+
+    /*
+     * Se recorre todo el archivo: se guardan (formateadas) solo las primeras
+     * 'max' coincidencias, pero se cuentan todas para informar el total real.
+     */
+    while (getline(&linea, &cap, f) != -1) {
         if (coincide(linea, &c, criterio, valor)) {
-            formatear(linea, &c, resultados[n], TAM_REGISTRO);
-            n++;
+            if (n < max) {
+                formatear(linea, &c, resultados[n], TAM_REGISTRO);
+                n++;
+            }
+            coincidencias++;
         }
-    }//lee lineas y las almacena mientras haya capacidad y coincidan con el criterio, las formatea legibles y las almacena en resultados
+    }
 
     int error = ferror(f);
     free(linea);
@@ -219,6 +231,8 @@ int csv_buscar(const char *ruta, int criterio, const char *valor,
     if (error) {
         fprintf(stderr, "[csv] Error leyendo %s\n", ruta);
         return -1;
-    }//cierra archivos y la linea administrada por getline
-    return n;//retorna espacios escritos
+    }
+    if (total != NULL)
+        *total = coincidencias;
+    return n;
 }
