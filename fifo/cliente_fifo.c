@@ -4,7 +4,6 @@
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
-#include <signal.h>
 
 #include "protocolo.h"
 #include "menu.h"
@@ -12,33 +11,27 @@
 #define FIFO_REQ "/tmp/fifo_dino_req"
 #define FIFO_RES "/tmp/fifo_dino_res"
 
-/* Escribe exactamente n bytes (evita escrituras parciales). 0 = ok, -1 = error */
+/* Escribe exactamente n bytes. 0 = ok, -1 = error */
 static int escribir_todo(int fd, const void *buf, size_t n)
 {
     const char *p = buf;
     while (n > 0) {
         ssize_t w = write(fd, p, n);
-        if (w < 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
+        if (w <= 0) return -1;
         p += w;
         n -= (size_t)w;
     }
     return 0;
 }
 
-/* Lee exactamente n bytes. 1 = ok, 0 = el otro extremo cerro, -1 = error */
+/* Lee exactamente n bytes. 1 = ok, 0 = EOF, -1 = error */
 static int leer_todo(int fd, void *buf, size_t n)
 {
     char *p = buf;
     size_t total = 0;
     while (total < n) {
         ssize_t r = read(fd, p + total, n - total);
-        if (r < 0) {
-            if (errno == EINTR) continue;
-            return -1;
-        }
+        if (r < 0) return -1;
         if (r == 0) return 0;
         total += (size_t)r;
     }
@@ -47,12 +40,9 @@ static int leer_todo(int fd, void *buf, size_t n)
 
 int main(void)
 {
-    /* Si el servidor muere, write() devuelve EPIPE en vez de matar al cliente */
-    signal(SIGPIPE, SIG_IGN);
-
     printf("[Cliente FIFO] Conectando con el servidor...\n");
 
-    /* Bloquea hasta que el servidor abra el extremo de lectura */
+    /* Bloquea hasta que el servidor abra el extremo correspondiente */
     int fd_req = open(FIFO_REQ, O_WRONLY);
     if (fd_req == -1) {
         perror("[Cliente FIFO] No se pudo abrir la FIFO de solicitudes (¿servidor activo?)");
@@ -73,7 +63,7 @@ int main(void)
 
     while (!servidor_caido) {
         solicitud_t sol;
-        menu_leer_solicitud(&sol);          /* menu.c: muestra menú, valida y arma sol */
+        menu_leer_solicitud(&sol);
 
         if (escribir_todo(fd_req, &sol, sizeof sol) == -1) {
             perror("[Cliente FIFO] Error enviando la solicitud");
@@ -110,7 +100,7 @@ int main(void)
                 menu_mostrar_cierre(RESP_SIN_RESULTADOS, NULL, 0);
                 fin = 1;
                 break;
-            default: /* RESP_ERROR u otro tipo inesperado */
+            default:
                 menu_mostrar_cierre(res.tipo, res.registro, 0);
                 fin = 1;
                 break;
