@@ -3,115 +3,116 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <errno.h>
+#include <signal.h>
 
 #include "protocolo.h"
+#include "menu.h"
 
 #define FIFO_REQ "/tmp/fifo_dino_req"
 #define FIFO_RES "/tmp/fifo_dino_res"
 
-// Función para mostrar el menú y capturar la solicitud del usuario
-static int obtener_solicitud_usuario(solicitud_t *sol) {
-    int opcion = 0;
-    char buffer[TAM_VALORUSUARIO];
-
-    printf("\n================ MENÚ DE BÚSQUEDA (FIFO) ================\n");
-    printf("1. Nombre (accepted_name)\n");
-    printf("2. Familia (family)\n");
-    printf("3. País (cc)\n");
-    printf("4. Edad (min_ma / max_ma)\n");
-    printf("5. Formación Geológica (formation)\n");
-    printf("6. Dieta (diet)\n");
-    printf("7. Salir\n");
-    printf("----------------------------------------------------------\n");
-    printf("Seleccione una opción (1-7): ");
-
-    if (scanf("%d", &opcion) != 1) {
-        while (getchar() != '\n'); // Limpiar buffer de entrada
-        return 1;
+/* Escribe exactamente n bytes (evita escrituras parciales). 0 = ok, -1 = error */
+static int escribir_todo(int fd, const void *buf, size_t n)
+{
+    const char *p = buf;
+    while (n > 0) {
+        ssize_t w = write(fd, p, n);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        p += w;
+        n -= (size_t)w;
     }
-    while (getchar() != '\n'); // Limpiar el salto de línea residual
+    return 0;
+}
 
-    if (opcion == 7) {
-        return 0; // Señal de salida
+/* Lee exactamente n bytes. 1 = ok, 0 = el otro extremo cerro, -1 = error */
+static int leer_todo(int fd, void *buf, size_t n)
+{
+    char *p = buf;
+    size_t total = 0;
+    while (total < n) {
+        ssize_t r = read(fd, p + total, n - total);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (r == 0) return 0;
+        total += (size_t)r;
     }
-
-    if (opcion < 1 || opcion > 6) {
-        printf("Opción inválida. Intente de nuevo.\n");
-        return 1;
-    }
-
-    printf("Ingrese el valor a buscar: ");
-    if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
-        buffer[strcspn(buffer, "\r\n")] = '\0'; // Eliminar salto de línea
-    } else {
-        buffer[0] = '\0';
-    }
-
-    sol->tipo = MSG_CONSULTA;
-    sol->criterio = opcion;
-    strncpy(sol->valor, buffer, TAM_VALORUSUARIO - 1);
-    sol->valor[TAM_VALORUSUARIO - 1] = '\0';
-
     return 1;
 }
 
-int main() {
-    printf("[Cliente FIFO] Conectando con el servidor FIFO...\n");
+int main(void)
+{
+    /* Si el servidor muere, write() devuelve EPIPE en vez de matar al cliente */
+    signal(SIGPIPE, SIG_IGN);
 
-    // 1. Abrir la FIFO de solicitudes en modo escritura
+    printf("[Cliente FIFO] Conectando con el servidor...\n");
+
+    /* Bloquea hasta que el servidor abra el extremo de lectura */
     int fd_req = open(FIFO_REQ, O_WRONLY);
     if (fd_req == -1) {
-        perror("[Cliente FIFO Error] El servidor no está activo (no se encontró /tmp/fifo_dino_req)");
-        printf("Asegúrate de ejecutar primero './bin/servidor_fifo'\n");
-        exit(EXIT_FAILURE);
+        perror("[Cliente FIFO] No se pudo abrir la FIFO de solicitudes (¿servidor activo?)");
+        fprintf(stderr, "Ejecuta primero ./bin/servidor_fifo en otra terminal.\n");
+        return EXIT_FAILURE;
     }
 
-    // 2. Abrir la FIFO de respuestas en modo lectura
     int fd_res = open(FIFO_RES, O_RDONLY);
     if (fd_res == -1) {
-        perror("[Cliente FIFO Error] No se pudo abrir la FIFO de respuestas");
+        perror("[Cliente FIFO] No se pudo abrir la FIFO de respuestas");
         close(fd_req);
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
 
-    printf("[Cliente FIFO] Conexión establecida con éxito.\n");
+    printf("[Cliente FIFO] Conexión establecida.\n");
 
-    while (1) {
+    int servidor_caido = 0;
+
+    while (!servidor_caido) {
         solicitud_t sol;
-        if (!obtener_solicitud_usuario(&sol)) {
-            // El usuario eligió salir
-            sol.tipo = MSG_SALIR;
-            write(fd_req, &sol, sizeof(solicitud_t));
+        menu_leer_solicitud(&sol);          /* menu.c: muestra menú, valida y arma sol */
+
+        if (escribir_todo(fd_req, &sol, sizeof sol) == -1) {
+            perror("[Cliente FIFO] Error enviando la solicitud");
+            break;
+        }
+
+        if (sol.tipo == MSG_SALIR) {
             printf("[Cliente FIFO] Finalizando sesión...\n");
             break;
         }
 
-        // Enviar la solicitud de consulta al servidor
-        if (write(fd_req, &sol, sizeof(solicitud_t)) <= 0) {
-            perror("[Cliente FIFO Error] Falló el envío de la consulta al servidor");
-            break;
-        }
-
-        // Leer los mensajes de respuesta secuencialmente desde la FIFO
         respuesta_t res;
-        int total_registros = 0;
-        printf("\n================ RESULTADOS DE LA BÚSQUEDA ================\n");
+        int total = 0;
+        int fin = 0;
 
-        while (read(fd_res, &res, sizeof(respuesta_t)) > 0) {
-            if (res.tipo == RESP_REGISTRO) {
-                total_registros++;
-                printf("[%d] %s\n", total_registros, res.registro);
-            } else if (res.tipo == RESP_FIN) {
-                printf("===========================================================\n");
-                printf("Búsqueda completada (%d registro(s) encontrado(s)).\n\n", total_registros);
+        while (!fin) {
+            int r = leer_todo(fd_res, &res, sizeof res);
+            if (r <= 0) {
+                fprintf(stderr, "[Cliente FIFO] Se perdió la conexión con el servidor.\n");
+                servidor_caido = 1;
                 break;
-            } else if (res.tipo == RESP_SIN_RESULTADOS) {
-                printf("No se encontraron coincidencias para la consulta solicitada.\n");
-                printf("===========================================================\n\n");
+            }
+
+            switch (res.tipo) {
+            case RESP_REGISTRO:
+                total++;
+                menu_mostrar_registro(res.registro);
                 break;
-            } else if (res.tipo == RESP_ERROR) {
-                printf("Error interno en el servidor al procesar la consulta en el CSV.\n");
-                printf("===========================================================\n\n");
+            case RESP_FIN:
+                menu_mostrar_cierre(RESP_FIN, NULL, total);
+                fin = 1;
+                break;
+            case RESP_SIN_RESULTADOS:
+                menu_mostrar_cierre(RESP_SIN_RESULTADOS, NULL, 0);
+                fin = 1;
+                break;
+            default: /* RESP_ERROR u otro tipo inesperado */
+                menu_mostrar_cierre(res.tipo, res.registro, 0);
+                fin = 1;
                 break;
             }
         }
@@ -119,5 +120,5 @@ int main() {
 
     close(fd_req);
     close(fd_res);
-    return 0;
+    return servidor_caido ? EXIT_FAILURE : EXIT_SUCCESS;
 }
