@@ -1,5 +1,7 @@
 #include "menu.h"
 
+#include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,19 +12,19 @@
  * Si la línea no cabe en 'buf', descarta el resto y deja 'buf' vacío.
  */
 static int leer_linea(char *buf, size_t tam)
-{//donde buf es la direccion al arreglo de texto de tamano tam
+{
     if (fgets(buf, (int)tam, stdin) == NULL)
         return -1;
 
     size_t n = strlen(buf);
     if (n > 0 && buf[n - 1] == '\n') {
-        buf[n - 1] = '\0';//elimina salto de linea
+        buf[n - 1] = '\0';   /* elimina el salto de línea */
     } else if (n == tam - 1) {
         int ch;
         while ((ch = getchar()) != '\n' && ch != EOF)
             ;   /* descartar lo que sobró */
         printf("Texto demasiado largo (máximo %zu caracteres).\n", tam - 2);
-        buf[0] = '\0';//se alcanzo el limite de tamano de la linea leida
+        buf[0] = '\0';
     }
     return 0;
 }
@@ -48,30 +50,34 @@ static int valor_valido(int criterio, const char *valor)
         printf("El valor no puede estar vacío.\n");
         return 0;
     }
-    if (criterio == CRITERIO_PAIS && strlen(valor) != 2) {
+    if (criterio == CRITERIO_PAIS &&
+        (strlen(valor) != 2 || !isalpha((unsigned char)valor[0]) ||
+         !isalpha((unsigned char)valor[1]))) {
         printf("El código de país debe tener exactamente 2 letras.\n");
         return 0;
     }
     if (criterio == CRITERIO_EDAD) {
         char *fin;
         double x = strtod(valor, &fin);
-        if (*fin != '\0' || x < 0) {
-            printf("La edad debe ser un número positivo.\n");
+        /* isfinite descarta "nan", "inf" y desbordes como "1e999" */
+        if (fin == valor || *fin != '\0' || !isfinite(x) || x < 0) {
+            printf("La edad debe ser un número mayor o igual que cero.\n");
             return 0;
         }
     }
     return 1;
-}//verifica errores en lectura
+}
 
 void menu_leer_solicitud(solicitud_t *sol)
 {
+    /* El índice de cada pregunta coincide con el CRITERIO_... del protocolo */
     const char *preguntas[] = {
         "", "Nombre", "Familia", "Código de país",
         "Millones de años", "Formación geológica", "Dieta"
     };
     char opcion[16];
-//Se prepara el arreglo de la opcion de la consulta de acuerdo con los indices del protocolo
-    memset(sol, 0, sizeof *sol);//inicializa en 0s
+
+    memset(sol, 0, sizeof *sol);
 
     for (;;) {
         mostrar_opciones();
@@ -80,32 +86,32 @@ void menu_leer_solicitud(solicitud_t *sol)
             printf("\n");
             sol->tipo = MSG_SALIR;
             return;
-        }//se leyo la linea hasta el final o hasta una salida
+        }
 
         if (strcmp(opcion, "0") == 0) {
             sol->tipo = MSG_SALIR;
-            return;//el usuario quiere salir
+            return;   /* el usuario quiere salir */
         }
 
-        int criterio = atoi(opcion);//cadena a  entero
+        int criterio = atoi(opcion);
         if (strlen(opcion) != 1 || criterio < CRITERIO_NOMBRE || criterio > CRITERIO_DIETA) {
-            printf("Opción no válida.\n");//Se valida la opcion escogida
+            printf("Opción no válida.\n");
             continue;
         }
 
         printf("%s: ", preguntas[criterio]);
-        fflush(stdout);//se imprime el criterio seleccionado por el usuario
+        fflush(stdout);
 
         if (leer_linea(sol->valor, sizeof sol->valor) == -1) {   /* Ctrl+D */
             printf("\n");
             sol->tipo = MSG_SALIR;
-            return;//se valida la solicitud
+            return;
         }
 
         if (!valor_valido(criterio, sol->valor))
-            continue;//si el valor es valido
+            continue;   /* valor inválido: se vuelve a mostrar el menú */
 
-        sol->tipo = MSG_CONSULTA;//tipo de solicitud como consulta y su criterio
+        sol->tipo = MSG_CONSULTA;
         sol->criterio = criterio;
         return;
     }
@@ -116,13 +122,13 @@ void menu_mostrar_registro(const char *registro)
     printf("  - %s\n", registro);
 }
 
-void menu_mostrar_cierre(int tipo_respuesta, const char *detalle, int total)
+void menu_mostrar_cierre(int tipo_respuesta, const char *detalle, int mostrados, int total)
 {
     switch (tipo_respuesta) {
     case RESP_FIN:
         printf("Se encontraron %d resultado(s)", total);
-        if (total == MAX_RESULTADOS)
-            printf(" (se muestran como máximo %d)", MAX_RESULTADOS);
+        if (total > mostrados)
+            printf(" (se muestran los primeros %d)", mostrados);
         printf(".\n");
         break;
     case RESP_SIN_RESULTADOS:
