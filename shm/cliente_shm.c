@@ -1,12 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <semaphore.h>
 #include <unistd.h>
 #include "../comun/protocolo.h"
+#include "../comun/menu.h"
 
 #define SHM_NAME "/dinos_shm"
 #define SEM_SRV_NAME "/dinos_sem_srv"
@@ -16,18 +16,6 @@ typedef struct {
     solicitud_t solicitud;
     respuesta_t respuesta;
 } shm_data_t;
-
-void mostrar_menu() {
-    printf("\n--- Busqueda en Dataset (SHM) ---\n");
-    printf("1. Nombre\n");
-    printf("2. Familia\n");
-    printf("3. Pais\n");
-    printf("4. Edad (Rango Ej: 65.5)\n");
-    printf("5. Formacion Geologica\n");
-    printf("6. Dieta\n");
-    printf("7. Salir\n");
-    printf("Seleccione un criterio: ");
-}
 
 int main() {
     // Abrir memoria compartida (O_CREAT incluido por seguridad si el cliente arranca milisegundos antes)
@@ -51,61 +39,42 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    int opcion;
-    char buffer[TAM_VALORUSUARIO];
-
     while (1) {
-        mostrar_menu();
-        if (scanf("%d", &opcion) != 1) {
-            while(getchar() != '\n'); // Limpiar buffer de basura
-            continue;
-        }
-        while(getchar() != '\n'); // Limpiar salto de línea
+        solicitud_t sol;
+        menu_leer_solicitud(&sol);
+        shm_ptr->solicitud = sol;
 
-        if (opcion == 7) {
-            shm_ptr->solicitud.tipo = MSG_SALIR;
+        if (sol.tipo == MSG_SALIR) {
             sem_post(sem_srv); // Despierta al servidor para que limpie y termine
             break;
         }
 
-        if (opcion < 1 || opcion > 6) {
-            printf("Opcion invalida.\n");
-            continue;
-        }
-
-        printf("Ingrese el valor a buscar: ");
-        fgets(buffer, TAM_VALORUSUARIO, stdin);
-        buffer[strcspn(buffer, "\n")] = 0; // Quitar el salto de línea
-
-        // 1. Preparar la estructura en memoria compartida
-        shm_ptr->solicitud.tipo = MSG_CONSULTA;
-        shm_ptr->solicitud.criterio = opcion;
-        strncpy(shm_ptr->solicitud.valor, buffer, TAM_VALORUSUARIO);
-
-        // 2. Avisar al servidor que la consulta está lista
+        // Avisar al servidor que la consulta está lista.
         sem_post(sem_srv);
 
-        // 3. Recibir e imprimir respuestas
         int num_resultados = 0;
         while (1) {
             sem_wait(sem_cli); // Espera a que el servidor escriba la respuesta
 
             if (shm_ptr->respuesta.tipo == RESP_REGISTRO) {
                 num_resultados++;
-                printf("[%d] %s\n", num_resultados, shm_ptr->respuesta.registro);
+                menu_mostrar_registro(shm_ptr->respuesta.registro);
                 
                 // IMPORTANTE: Enviar ACK al servidor para que sepa que ya extrajimos los datos 
                 // y puede sobrescribir con el siguiente registro.
                 sem_post(sem_srv); 
                 
             } else if (shm_ptr->respuesta.tipo == RESP_SIN_RESULTADOS) {
-                printf("\nNo se encontraron resultados para la busqueda.\n");
+                menu_mostrar_cierre(RESP_SIN_RESULTADOS, NULL, 0);
                 break;
             } else if (shm_ptr->respuesta.tipo == RESP_FIN) {
-                printf("\n--- Fin de los resultados (%d encontrados) ---\n", num_resultados);
+                menu_mostrar_cierre(RESP_FIN, NULL, num_resultados);
                 break;
             } else if (shm_ptr->respuesta.tipo == RESP_ERROR) {
-                printf("\n[Error del Servidor] %s\n", shm_ptr->respuesta.registro);
+                menu_mostrar_cierre(RESP_ERROR, shm_ptr->respuesta.registro, 0);
+                break;
+            } else {
+                menu_mostrar_cierre(shm_ptr->respuesta.tipo, NULL, 0);
                 break;
             }
         }
