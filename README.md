@@ -258,3 +258,166 @@ El mensaje de cierre será uno de los siguientes:
 - `RESP_ERROR`, si ocurrió un error.
 
 De esta manera, el cliente puede identificar cuándo termina cada consulta y distinguir entre una búsqueda sin coincidencias y una operación que produjo un error.
+
+---
+
+## ⚙️ 7. Compilación
+
+El proyecto está diseñado para Linux, WSL u otro entorno POSIX compatible.
+Requiere:
+
+- GCC;
+- GNU Make;
+- encabezados y bibliotecas POSIX;
+- soporte para memoria compartida y semáforos POSIX.
+
+El dataset debe estar ubicado en `data/dataset.csv` antes de ejecutar el
+servidor. Desde la raíz del repositorio, compila todo con:
+
+```bash
+make
+```
+
+También es posible compilar solamente una implementación:
+
+```bash
+make fifo
+make shm
+```
+
+Los ejecutables se generan en `bin/`:
+
+```text
+bin/cliente_fifo
+bin/servidor_fifo
+bin/cliente_shm
+bin/servidor_shm
+```
+
+El `Makefile` compila con `-Wall -Wextra -pthread` y enlaza con `-lrt
+-pthread`. Para eliminar los ejecutables y recursos temporales:
+
+```bash
+make clean
+```
+
+> La versión SHM utiliza encabezados POSIX como `sys/mman.h`; por eso no se
+> garantiza la compilación completa en un MinGW de Windows sin soporte POSIX.
+
+## ▶️ 8. Ejecución
+
+El servidor debe iniciarse desde la raíz del proyecto porque busca el dataset
+con la ruta relativa `data/dataset.csv`. Cliente y servidor deben ejecutarse
+en terminales separadas.
+
+### 8.1. FIFO
+
+Terminal 1:
+
+```bash
+./bin/servidor_fifo
+```
+
+Terminal 2:
+
+```bash
+./bin/cliente_fifo
+```
+
+El servidor crea estas tuberías nombradas:
+
+```text
+/tmp/fifo_dino_req   Cliente -> servidor
+/tmp/fifo_dino_res   Servidor -> cliente
+```
+
+El cliente muestra el menú común de `comun/menu.c`, envía una consulta y
+espera resultados hasta recibir `RESP_FIN`, `RESP_SIN_RESULTADOS` o
+`RESP_ERROR`.
+
+### 8.2. Memoria compartida
+
+Terminal 1:
+
+```bash
+./bin/servidor_shm
+```
+
+Terminal 2:
+
+```bash
+./bin/cliente_shm
+```
+
+Esta versión utiliza:
+
+```text
+/dinos_shm       Región de memoria compartida
+/dinos_sem_srv   Semáforo para solicitudes y confirmaciones
+/dinos_sem_cli   Semáforo para respuestas
+```
+
+El cliente escribe la solicitud en la memoria compartida y publica
+`/dinos_sem_srv`. El servidor lee la solicitud, escribe una respuesta y
+publica `/dinos_sem_cli`. Cuando recibe un registro, el cliente lo muestra y
+publica de nuevo `/dinos_sem_srv` como confirmación; así el servidor no
+sobrescribe la respuesta antes de que sea leída.
+
+Para terminar normalmente, selecciona la opción `0` del menú. El cliente
+envía `MSG_SALIR` y el servidor libera la memoria compartida y los semáforos.
+
+## 🧭 9. Funcionamiento del menú común
+
+Los clientes FIFO y SHM utilizan las mismas funciones de `comun/menu.c`, por
+lo que la interfaz y las validaciones son iguales:
+
+```text
+1. Buscar por nombre
+2. Buscar por familia
+3. Buscar por país
+4. Buscar por edad en millones de años
+5. Buscar por formación geológica
+6. Buscar por dieta
+0. Salir
+```
+
+El módulo valida que el valor no esté vacío, que el país tenga dos caracteres
+y que la edad sea un número no negativo. También permite salir mediante
+`Ctrl+D`.
+
+El servidor utiliza `comun/csv.c` para leer el archivo secuencialmente. No
+carga todo el dataset en memoria y devuelve como máximo 20 coincidencias por
+consulta.
+
+## 🧹 10. Manejo de errores y observación del sistema
+
+El programa informa errores al crear o abrir recursos IPC, al leer o escribir
+mensajes y al abrir o procesar el CSV. Si el otro proceso termina, el proceso
+restante detecta el cierre de la comunicación y finaliza o informa la pérdida
+de conexión.
+
+Durante la ejecución se pueden observar los procesos y recursos con:
+
+```bash
+ps -ef | grep servidor
+ps -ef | grep cliente
+pstree -p
+lsof -p <PID>
+ls -l /tmp/fifo_dino_req /tmp/fifo_dino_res
+ls -l /dev/shm
+```
+
+También se pueden observar las llamadas al sistema con:
+
+```bash
+strace -f -o servidor.trace ./bin/servidor_fifo
+strace -f -o cliente.trace ./bin/cliente_fifo
+```
+
+En FIFO se pueden identificar llamadas como `mkfifo`, `openat`, `read`,
+`write`, `close` y `unlink`. En SHM aparecen además operaciones como
+`shm_open`, `ftruncate`, `mmap`, `sem_wait` y `sem_post`.
+
+Para conocer el funcionamiento detallado de cada archivo, el protocolo
+completo y el flujo interno de ambas implementaciones, consulta
+[`docs/doc.md`](docs/doc.md).
